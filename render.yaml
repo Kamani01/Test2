@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ctrader-indicator-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 18
