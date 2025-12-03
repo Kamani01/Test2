@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>cTrader Live Dashboard</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b0f13; --card:#0f1720; --muted:#9aa6b2; --accent-buy:#0fb07a; --accent-sell:#ff5252;
+      --accent-info:#3aa0ff; color-scheme: dark;
+    }
+    html,body{height:100%; margin:0; font-family:Inter,system-ui,Roboto,Arial; background:var(--bg); color:#e6eef3}
+    .wrap{max-width:900px; margin:12px auto; padding:12px;}
+    header{display:flex;gap:12px;align-items:center; margin-bottom:10px}
+    header h1{font-size:18px;margin:0}
+    .grid{display:grid; grid-template-columns: 1fr; gap:10px;}
+    @media(min-width:820px){ .grid{grid-template-columns: 360px 1fr} }
+
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02)); padding:12px; border-radius:12px; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+    .current {display:flex; flex-direction:column; gap:10px}
+    .row {display:flex; gap:8px; align-items:center}
+    .badge {padding:6px 10px; border-radius:8px; font-weight:700; font-size:14px}
+    .badge.buy {background:linear-gradient(90deg, rgba(15,176,122,0.18), rgba(15,176,122,0.08)); color:var(--accent-buy)}
+    .badge.sell {background:linear-gradient(90deg, rgba(255,82,82,0.12), rgba(255,82,82,0.06)); color:var(--accent-sell)}
+    .muted{color:var(--muted); font-size:13px}
+    .big {font-size:28px; font-weight:700; letter-spacing:0.5px}
+    .small {font-size:13px;color:var(--muted)}
+
+    .list {max-height:360px; overflow:auto; padding-right:6px}
+    .signal {display:flex; justify-content:space-between; padding:8px; border-radius:8px; margin-bottom:6px; background:rgba(255,255,255,0.01)}
+    .signal .left {display:flex; gap:8px; align-items:center}
+    .signal .time {font-size:12px; color:var(--muted)}
+    .score-bubble {min-width:54px; text-align:center; padding:6px 8px; border-radius:8px; background:rgba(255,255,255,0.03)}
+
+    /* header small controls */
+    .controls{margin-left:auto; display:flex; gap:8px}
+    .btn {background:transparent;border:1px solid rgba(255,255,255,0.04); padding:6px 10px;border-radius:8px;color:var(--muted); font-size:13px}
+
+    footer {text-align:center; color:var(--muted); font-size:12px; margin-top:10px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>cTrader Live Dashboard</h1>
+      <div class="controls">
+        <button class="btn" id="btn-refresh">Refresh</button>
+        <button class="btn" id="btn-pause">Pause</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- LEFT COLUMN -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="card current" id="currentCard">
+          <div class="row">
+            <div id="signalBadge" class="badge muted">No data</div>
+            <div style="margin-left:auto" class="small" id="signalTime">—</div>
+          </div>
+
+          <div class="row" style="align-items:flex-end; justify-content:space-between">
+            <div>
+              <div class="muted">Price</div>
+              <div class="big" id="signalPrice">—</div>
+            </div>
+            <div style="text-align:right">
+              <div class="muted">Score</div>
+              <div class="score-bubble" id="signalScore">—</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:6px; justify-content:space-between">
+            <div class="muted">Current position</div>
+            <div id="currentPosition" class="muted">—</div>
+          </div>
+
+          <div style="margin-top:8px">
+            <div class="muted">Latest raw payload</div>
+            <pre id="rawPayload" style="white-space:pre-wrap;color:var(--muted);font-size:12px;margin:6px 0 0 0"></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <div>
+              <div class="muted">Hit Rate</div>
+              <div id="hitrateDisplay" style="font-size:20px;font-weight:700">—</div>
+            </div>
+            <div style="width:150px">
+              <canvas id="scoreChart" width="400" height="200"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+            <div style="font-weight:700">Signal History</div>
+            <div class="muted" id="historyCount">0</div>
+          </div>
+          <div class="list" id="historyList">
+            <!-- signals inserted here -->
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:700; margin-bottom:8px">Quick Actions</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn" id="openInBrowser">Open in Browser</button>
+            <button class="btn" id="openInCTrader">Open in cTrader (chart)</button>
+          </div>
+          <div class="muted" style="margin-top:8px; font-size:13px">
+            Use these to quickly open the UI or trigger Chart.OpenWebBrowser from your desktop cBot.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>Dashboard served from your backend • auto-refresh every 1s (latest) / 3s (history)</footer>
+  </div>
+
+<script>
+const API_ROOT = '';
+let paused = false;
+const CHART_LIMIT = 50;
+
+const ctx = document.getElementById('scoreChart').getContext('2d');
+const chartData = {
+  labels: [],
+  datasets: [{
+    label: 'Pivot Score',
+    data: [],
+    tension: 0.3,
+    pointRadius: 3,
+    fill: false,
+    borderWidth: 2
+  }]
+};
+const scoreChart = new Chart(ctx, {
+  type: 'line',
+  data: chartData,
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: { beginAtZero: true, max: 100 },
+      x: { display: false }
+    },
+    plugins: { legend: { display: false } }
+  }
+});
+
+document.getElementById('btn-refresh').addEventListener('click', () => { loadNow(); });
+document.getElementById('btn-pause').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('btn-pause').innerText = paused ? 'Resume' : 'Pause';
+});
+document.getElementById('openInBrowser').addEventListener('click', () => {
+  window.open(window.location.href, '_blank');
+});
+document.getElementById('openInCTrader').addEventListener('click', () => {
+  alert('On desktop, call Chart.OpenWebBrowser("' + window.location.href + '") in your cBot to open this UI inside cTrader.');
+});
+
+async function fetchLatest(){
+  try{
+    const r = await fetch(API_ROOT + '/latest', {cache: 'no-store'});
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function fetchHistory(){
+  try{
+    const r = await fetch(API_ROOT + '/history', {cache: 'no-store'});
+    if (!r.ok) return [];
+    return await r.json();
+  } catch(e) {
+    return [];
+  }
+}
+
+function renderCurrent(payload){
+  const badge = document.getElementById('signalBadge');
+  const price = document.getElementById('signalPrice');
+  const score = document.getElementById('signalScore');
+  const timeEl = document.getElementById('signalTime');
+  const raw = document.getElementById('rawPayload');
+  const pos = document.getElementById('currentPosition');
+
+  raw.innerText = JSON.stringify(payload, null, 2);
+
+  if (!payload || Object.keys(payload).length===0){
+    badge.className = 'badge muted';
+    badge.innerText = 'No data';
+    price.innerText = '—';
+    score.innerText = '—';
+    timeEl.innerText = '—';
+    pos.innerText = '—';
+    return;
+  }
+
+  const t = payload.type || 'data';
+  const p = payload.price !== undefined ? payload.price : '—';
+  const s = payload.score !== undefined ? Math.round(payload.score * 10)/10 : '—';
+  const time = payload.time || payload.receivedAt || '';
+
+  if (t==='buy'){
+    badge.className = 'badge buy';
+    badge.innerText = 'BUY';
+  } else if (t==='sell'){
+    badge.className = 'badge sell';
+    badge.innerText = 'SELL';
+  } else if (t==='hitrate'){
+    badge.className = 'badge muted';
+    badge.innerText = 'HITRATE';
+  } else {
+    badge.className = 'badge muted';
+    badge.innerText = t.toUpperCase();
+  }
+
+  price.innerText = p;
+  score.innerText = s;
+  timeEl.innerText = time ? new Date(time).toLocaleString() : '';
+  pos.innerText = t === 'buy' ? 'Long' : t === 'sell' ? 'Short' : '—';
+
+  // If hitrate payload present, show
+  if (payload.hitrate !== undefined){
+    document.getElementById('hitrateDisplay').innerText = payload.hitrate.toFixed(1) + '%';
+  }
+}
+
+function renderHistory(list){
+  const el = document.getElementById('historyList');
+  el.innerHTML = '';
+  document.getElementById('historyCount').innerText = list.length;
+  let scores = [];
+  for (let i=0;i<list.length;i++){
+    const item = list[i];
+    const row = document.createElement('div');
+    row.className = 'signal';
+    const left = document.createElement('div'); left.className='left';
+    const meta = document.createElement('div');
+    const title = document.createElement('div');
+    title.style.fontWeight = '700';
+    title.innerText = (item.type || '').toUpperCase() + (item.type==='buy' ? ' ↑' : item.type==='sell' ? ' ↓' : '');
+    meta.appendChild(title);
+    const sub = document.createElement('div');
+    sub.className='time';
+    sub.innerText = item.time ? new Date(item.time).toLocaleTimeString() : (item.receivedAt ? new Date(item.receivedAt).toLocaleTimeString() : '');
+    meta.appendChild(sub);
+    left.appendChild(meta);
+
+    const right = document.createElement('div');
+    const scoreBox = document.createElement('div');
+    scoreBox.className='score-bubble';
+    scoreBox.innerText = item.score !== undefined ? Math.round(item.score*10)/10 : (item.hitrate !== undefined ? (item.hitrate.toFixed(1)+'%') : '—');
+    right.appendChild(scoreBox);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    el.appendChild(row);
+
+    if (item.score !== undefined) scores.push({score: item.score, label: sub.innerText});
+  }
+
+  // update chart with latest scores (limit CHART_LIMIT)
+  const data = scores.slice(0, CHART_LIMIT).reverse();
+  chartData.labels = data.map((d,i)=>i);
+  chartData.datasets[0].data = data.map(d=>d.score);
+  scoreChart.update();
+}
+
+let lastHistoryETag = null;
+async function loadNow(){
+  if (paused) return;
+  const latest = await fetchLatest();
+  if (latest) renderCurrent(latest);
+  const history = await fetchHistory();
+  if (history) renderHistory(history);
+}
+
+// initial load
+loadNow();
+// polling
+setInterval(loadNow, 1000);   // latest every 1s
+setInterval(async ()=>{ if(!paused){ const h = await fetchHistory(); if(h) renderHistory(h); } }, 3000);
+</script>
+</body>
+</html>
